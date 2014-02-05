@@ -333,6 +333,8 @@ class PrinterContext {
   const Elf_Shdr *FindExceptionTable(unsigned IndexTableIndex,
                                      off_t IndexTableOffset) const;
 
+  const Elf_Shdr *FindSectionContainAddr(off_t Addr) const;
+
   void PrintIndexTable(unsigned SectionIndex, const Elf_Shdr *IT) const;
   void PrintExceptionTable(const Elf_Shdr *IT, const Elf_Shdr *EHT,
                            uint64_t TableEntryOffset) const;
@@ -394,6 +396,18 @@ PrinterContext<ET>::FindExceptionTable(unsigned IndexSectionIndex,
 }
 
 template <typename ET>
+const typename object::ELFFile<ET>::Elf_Shdr *
+PrinterContext<ET>::FindSectionContainAddr(off_t Addr) const {
+  for (Elf_Shdr_iterator SI = ELF->begin_sections(), SE = ELF->end_sections();
+       SI != SE; ++SI) {
+    if (SI->sh_addr <= Addr && Addr < SI->sh_addr + SI->sh_size) {
+      return &*SI;
+    }
+  }
+  return NULL;
+}
+
+template <typename ET>
 void PrinterContext<ET>::PrintExceptionTable(const Elf_Shdr *IT,
                                              const Elf_Shdr *EHT,
                                              uint64_t TableEntryOffset) const {
@@ -447,7 +461,7 @@ void PrinterContext<ET>::PrintExceptionTable(const Elf_Shdr *IT,
   } else {
     SW.printString("Model", StringRef("Generic"));
 
-    uint64_t Address = PREL31(Word, EHT->sh_addr);
+    uint64_t Address = PREL31(Word, EHT->sh_addr + TableEntryOffset);
     SW.printHex("PersonalityRoutineAddress", Address);
     if (ErrorOr<StringRef> Name = FunctionAtAddress(EHT->sh_link, Address))
       SW.printString("PersonalityRoutineName", *Name);
@@ -496,7 +510,8 @@ void PrinterContext<ET>::PrintIndexTable(unsigned SectionIndex,
       continue;
     }
 
-    const uint64_t Offset = PREL31(Word0, IT->sh_addr);
+    const uint64_t Offset =
+      (IT->sh_addr == 0) ? Word0 : PREL31(Word0, IT->sh_addr + Entry * 8);
     SW.printHex("FunctionAddress", Offset);
     if (ErrorOr<StringRef> Name = FunctionAtAddress(IT->sh_link, Offset))
       SW.printString("FunctionName", *Name);
@@ -514,16 +529,34 @@ void PrinterContext<ET>::PrintIndexTable(unsigned SectionIndex,
 
       PrintOpcodes(Contents->data() + Entry * IndexTableEntrySize + 4, 3, 1);
     } else {
+      uint64_t TableEntryOffset;
       const Elf_Shdr *EHT =
         FindExceptionTable(SectionIndex, Entry * IndexTableEntrySize + 4);
 
-      if (ErrorOr<StringRef> Name = ELF->getSectionName(EHT))
-        SW.printString("ExceptionHandlingTable", *Name);
+      if (IT->sh_addr == 0) {
+        // This file is a relocatable object.  We should be able to find the
+        // .ARM.extab* section by checking the relocation table for .ARM.exidx*
+        // section.
+        TableEntryOffset = Word1;
+      } else {
+        // This file is an executable.  The fixup is likely to be resolved to
+        // absolute address by static linker.  Find .ARM.extab section by
+        // finding the section containing the absolute address.
+        uint64_t TableEntryAddr = PREL31(Word1, IT->sh_addr + Entry * 8 + 4);
+        if (!EHT)
+          EHT = FindSectionContainAddr(TableEntryAddr);
+        if (EHT)
+          TableEntryOffset = TableEntryAddr - EHT->sh_addr;
+      }
 
-      uint64_t TableEntryOffset = PREL31(Word1, IT->sh_addr);
-      SW.printHex("TableEntryOffset", TableEntryOffset);
+      if (EHT)
+        if (ErrorOr<StringRef> Name = ELF->getSectionName(EHT))
+          SW.printString("ExceptionHandlingTable", *Name);
 
-      PrintExceptionTable(IT, EHT, TableEntryOffset);
+      SW.printHex("TableEntryOffset", static_cast<uint32_t>(TableEntryOffset));
+
+      if (EHT)
+        PrintExceptionTable(IT, EHT, TableEntryOffset);
     }
   }
 }
