@@ -264,6 +264,23 @@ void MCObjectFileInfo::InitELFMCObjectFileInfo(Triple T) {
   case Triple::armeb:
   case Triple::thumb:
   case Triple::thumbeb:
+    // Most ARM ELF environment are using ARM EHABI, thus the default value
+    // dwarf::DW_EH_PE_absptr is correct.
+    if (T.getOS() == Triple::NetBSD) {
+      // For NetBSD ARM port, the Itanium C++ ABI adopted instead of EHABI.
+      PersonalityEncoding = (RelocM == Reloc::PIC_)
+        ? (dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
+           dwarf::DW_EH_PE_sdata4)
+        : dwarf::DW_EH_PE_absptr;
+      LSDAEncoding = (RelocM == Reloc::PIC_)
+        ? dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4
+        : dwarf::DW_EH_PE_absptr;
+      TTypeEncoding = (RelocM == Reloc::PIC_)
+        ? (dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
+           dwarf::DW_EH_PE_sdata4)
+        : dwarf::DW_EH_PE_absptr;
+    }
+    break;
   case Triple::x86:
     PersonalityEncoding = (RelocM == Reloc::PIC_)
      ? dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4
