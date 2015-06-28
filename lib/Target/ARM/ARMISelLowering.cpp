@@ -543,6 +543,27 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::CTPOP,      MVT::v4i16, Custom);
     setOperationAction(ISD::CTPOP,      MVT::v8i16, Custom);
 
+    // NEON does not have single instruction CTTZ for vectors.
+    setOperationAction(ISD::CTTZ, MVT::v8i8, Expand);
+    setOperationAction(ISD::CTTZ, MVT::v4i16, Expand);
+    setOperationAction(ISD::CTTZ, MVT::v2i32, Expand);
+    setOperationAction(ISD::CTTZ, MVT::v1i64, Expand);
+
+    setOperationAction(ISD::CTTZ, MVT::v16i8, Expand);
+    setOperationAction(ISD::CTTZ, MVT::v8i16, Expand);
+    setOperationAction(ISD::CTTZ, MVT::v4i32, Expand);
+    setOperationAction(ISD::CTTZ, MVT::v2i64, Expand);
+
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v8i8, Expand);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v4i16, Expand);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v2i32, Expand);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v1i64, Expand);
+
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v16i8, Expand);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v8i16, Expand);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v4i32, Expand);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v2i64, Expand);
+
     // NEON only has FMA instructions as of VFP4.
     if (!Subtarget->hasVFP4()) {
       setOperationAction(ISD::FMA, MVT::v2f32, Expand);
