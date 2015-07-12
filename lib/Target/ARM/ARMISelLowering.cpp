@@ -4321,28 +4321,37 @@ static SDValue LowerCTTZ(SDNode *N, SelectionDAG &DAG,
       SDValue Bits = DAG.getNode(ISD::SUB, dl, VT, LSB, R1);
       return DAG.getNode(ISD::CTPOP, dl, VT, Bits);
     }
-    if (ElemTy == MVT::i16 || ElemTy ==MVT::i32) {
-      // cttz(X) = (WIDTH - 1) - ctlz(LSB), if x != 0
-      unsigned NumBits = ElemTy.getSizeInBits();
-      SDValue WidthMinus1 =
+    if (ElemTy == MVT::i16 || ElemTy == MVT::i32) {
+      if (N->getOpcode() == ISD::CTTZ_ZERO_UNDEF) {
+        // cttz(X) = (WIDTH - 1) - ctlz(LSB), if x != 0
+        unsigned NumBits = ElemTy.getSizeInBits();
+        SDValue WidthMinus1 =
           DAG.getNode(ARMISD::VMOVIMM, dl, VT,
                       DAG.getTargetConstant(NumBits - 1, dl, ElemTy));
-      SDValue CTLZ = DAG.getNode(ISD::CTLZ, dl, VT, LSB);
-      SDValue CTTZ_ZeroUnd = DAG.getNode(ISD::SUB, dl, VT, WidthMinus1, CTLZ);
+        SDValue CTLZ = DAG.getNode(ISD::CTLZ, dl, VT, LSB);
+        return DAG.getNode(ISD::SUB, dl, VT, WidthMinus1, CTLZ);
+      } else {
+        // cttz(X) = ctpop(LSB - 1)
+        SDValue R1 =  DAG.getNode(ARMISD::VMOVIMM, dl, VT,
+                                  DAG.getTargetConstant(1, dl, ElemTy));
+        SDValue Bits = DAG.getNode(ISD::SUB, dl, VT, LSB, R1);
 
-      if (N->getOpcode() == ISD::CTTZ_ZERO_UNDEF) {
-        return CTTZ_ZeroUnd;
+        EVT VT8 = (VT.getSizeInBits() == 64) ? MVT::v8i8 : MVT::v16i8;
+        SDValue VecI8 = DAG.getNode(ISD::BITCAST, dl, VT8, Bits);
+        SDValue Cnt8 = DAG.getNode(ISD::CTPOP, dl, VT8, VecI8);
+
+        EVT VT16 = (VT.getSizeInBits() == 64) ? MVT::v4i16 : MVT::v8i16;
+        SDValue Cnt16 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT16,
+            DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+            Cnt8);
+        if (ElemTy == MVT::i16)
+          return Cnt16;
+        EVT VT32 = (VT.getSizeInBits() == 64) ? MVT::v2i32 : MVT::v4i32;
+        SDValue Cnt32 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT32,
+            DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+            Cnt16);
+        return Cnt32;
       }
-
-      // If the input vector element is equal to zero, then select the number
-      // of bits instead of the result from CTTZ_ZeroUnd.
-      SDValue Cmp = DAG.getNode(ARMISD::VCEQZ, dl, VT, X);
-      SDValue Width = DAG.getNode(ARMISD::VMOVIMM, dl, VT,
-                               DAG.getTargetConstant(NumBits, dl, ElemTy));
-      return DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT,
-                         DAG.getTargetConstant(Intrinsic::arm_neon_vbsl, dl,
-                                               MVT::i32),
-                         Cmp, Width, CTTZ_ZeroUnd);
     }
     if (ElemTy == MVT::i64) {
       // cttz(X) = ctpop(LSB - 1)
