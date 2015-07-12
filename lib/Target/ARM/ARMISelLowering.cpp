@@ -4336,6 +4336,10 @@ static SDValue LowerCTTZ(SDNode *N, SelectionDAG &DAG,
 
     // Compute with: cttz(x) = ctpop(lsb - 1)
 
+    // Since we can only compute the number of bits in a byte with vcnt.8, we
+    // have to gather the result with pairwise addition (vpaddl) for i16, i32,
+    // and i64.
+
     // Compute LSB - 1.
     SDValue Bits;
     if (ElemTy == MVT::i64) {
@@ -4369,8 +4373,8 @@ static SDValue LowerCTTZ(SDNode *N, SelectionDAG &DAG,
     if (ElemTy == MVT::i32)
       return Cnt32;
 
-    EVT VT64Bit = VT.is64BitVector() ? MVT::v1i64 : MVT::v2i64;
-    SDValue Cnt64 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT64Bit,
+    assert(ElemTy == MVT::i64);
+    SDValue Cnt64 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT,
         DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
         Cnt32);
     return Cnt64;
