@@ -4308,73 +4308,72 @@ static SDValue LowerCTTZ(SDNode *N, SelectionDAG &DAG,
   if (VT.isVector()) {
     assert(ST->hasNEON());
 
-    // Least Significant Set Bit: LSB = X & -X
+    // Compute the least significant set bit: LSB = X & -X
     SDValue X = N->getOperand(0);
     SDValue NX = DAG.getNode(ISD::SUB, dl, VT, getZeroVector(VT, DAG, dl), X);
     SDValue LSB = DAG.getNode(ISD::AND, dl, VT, X, NX);
 
     EVT ElemTy = VT.getVectorElementType();
+
     if (ElemTy == MVT::i8) {
-      // cttz(X) = ctpop(LSB - 1)
-      SDValue R1 =  DAG.getNode(ARMISD::VMOVIMM, dl, VT,
+      // Compute with: cttz(x) = ctpop(lsb - 1)
+      SDValue One = DAG.getNode(ARMISD::VMOVIMM, dl, VT,
                                 DAG.getTargetConstant(1, dl, ElemTy));
-      SDValue Bits = DAG.getNode(ISD::SUB, dl, VT, LSB, R1);
+      SDValue Bits = DAG.getNode(ISD::SUB, dl, VT, LSB, One);
       return DAG.getNode(ISD::CTPOP, dl, VT, Bits);
     }
-    if (ElemTy == MVT::i16 || ElemTy == MVT::i32) {
-      if (N->getOpcode() == ISD::CTTZ_ZERO_UNDEF) {
-        // cttz(X) = (WIDTH - 1) - ctlz(LSB), if x != 0
-        unsigned NumBits = ElemTy.getSizeInBits();
-        SDValue WidthMinus1 =
+
+    if ((ElemTy == MVT::i16 || ElemTy == MVT::i32) &&
+        (N->getOpcode() == ISD::CTTZ_ZERO_UNDEF)) {
+      // Compute with: cttz(x) = (width - 1) - ctlz(lsb), if x != 0
+      unsigned NumBits = ElemTy.getSizeInBits();
+      SDValue WidthMinus1 =
           DAG.getNode(ARMISD::VMOVIMM, dl, VT,
                       DAG.getTargetConstant(NumBits - 1, dl, ElemTy));
-        SDValue CTLZ = DAG.getNode(ISD::CTLZ, dl, VT, LSB);
-        return DAG.getNode(ISD::SUB, dl, VT, WidthMinus1, CTLZ);
-      } else {
-        // cttz(X) = ctpop(LSB - 1)
-        SDValue R1 =  DAG.getNode(ARMISD::VMOVIMM, dl, VT,
-                                  DAG.getTargetConstant(1, dl, ElemTy));
-        SDValue Bits = DAG.getNode(ISD::SUB, dl, VT, LSB, R1);
-
-        EVT VT8 = (VT.getSizeInBits() == 64) ? MVT::v8i8 : MVT::v16i8;
-        SDValue VecI8 = DAG.getNode(ISD::BITCAST, dl, VT8, Bits);
-        SDValue Cnt8 = DAG.getNode(ISD::CTPOP, dl, VT8, VecI8);
-
-        EVT VT16 = (VT.getSizeInBits() == 64) ? MVT::v4i16 : MVT::v8i16;
-        SDValue Cnt16 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT16,
-            DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
-            Cnt8);
-        if (ElemTy == MVT::i16)
-          return Cnt16;
-        EVT VT32 = (VT.getSizeInBits() == 64) ? MVT::v2i32 : MVT::v4i32;
-        SDValue Cnt32 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT32,
-            DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
-            Cnt16);
-        return Cnt32;
-      }
+      SDValue CTLZ = DAG.getNode(ISD::CTLZ, dl, VT, LSB);
+      return DAG.getNode(ISD::SUB, dl, VT, WidthMinus1, CTLZ);
     }
+
+    // Compute with: cttz(x) = ctpop(lsb - 1)
+
+    // Compute LSB - 1.
+    SDValue Bits;
     if (ElemTy == MVT::i64) {
-      // cttz(X) = ctpop(LSB - 1)
       // Load constant 0xffff'ffff'ffff'ffff to register.
-      SDValue FF =  DAG.getNode(ARMISD::VMOVIMM, dl, MVT::v2i64,
-                                DAG.getTargetConstant(0x1eff, dl, MVT::i32));
-      // Compute LSB - 1.
-      SDValue Bits = DAG.getNode(ISD::ADD, dl, VT, LSB, FF);
-      // Count #bits with vcnt.8 and vpaddl.u32.
-      SDValue VecI8 = DAG.getNode(ISD::BITCAST, dl, MVT::v16i8, Bits);
-      SDValue Cnt8 = DAG.getNode(ISD::CTPOP, dl, MVT::v16i8, VecI8);
-      SDValue Cnt16 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, MVT::v8i16,
-          DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
-          Cnt8);
-      SDValue Cnt32 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, MVT::v4i32,
-          DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
-          Cnt16);
-      SDValue Cnt64 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, MVT::v2i64,
-          DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
-          Cnt32);
-      return Cnt64;
+      SDValue FF = DAG.getNode(ARMISD::VMOVIMM, dl, VT,
+                               DAG.getTargetConstant(0x1eff, dl, MVT::i32));
+      Bits = DAG.getNode(ISD::ADD, dl, VT, LSB, FF);
+    } else {
+      SDValue One = DAG.getNode(ARMISD::VMOVIMM, dl, VT,
+                                DAG.getTargetConstant(1, dl, ElemTy));
+      Bits = DAG.getNode(ISD::SUB, dl, VT, LSB, One);
     }
-    llvm_unreachable("Unexpected vector element type for @llvm.cttz.*()");
+
+    // Count #bits with vcnt.8.
+    EVT VT8Bit = VT.is64BitVector() ? MVT::v8i8 : MVT::v16i8;
+    SDValue BitsVT8 = DAG.getNode(ISD::BITCAST, dl, VT8Bit, Bits);
+    SDValue Cnt8 = DAG.getNode(ISD::CTPOP, dl, VT8Bit, BitsVT8);
+
+    // Gather the #bits with vpaddl (pairwise add.)
+    EVT VT16Bit = VT.is64BitVector() ? MVT::v4i16 : MVT::v8i16;
+    SDValue Cnt16 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT16Bit,
+        DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+        Cnt8);
+    if (ElemTy == MVT::i16)
+      return Cnt16;
+
+    EVT VT32Bit = VT.is64BitVector() ? MVT::v2i32 : MVT::v4i32;
+    SDValue Cnt32 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT32Bit,
+        DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+        Cnt16);
+    if (ElemTy == MVT::i32)
+      return Cnt32;
+
+    EVT VT64Bit = VT.is64BitVector() ? MVT::v1i64 : MVT::v2i64;
+    SDValue Cnt64 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT64Bit,
+        DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+        Cnt32);
+    return Cnt64;
   }
 
   if (!ST->hasV6T2Ops())
