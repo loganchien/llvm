@@ -552,7 +552,7 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::CTTZ, MVT::v16i8, Custom);
     setOperationAction(ISD::CTTZ, MVT::v8i16, Custom);
     setOperationAction(ISD::CTTZ, MVT::v4i32, Custom);
-    setOperationAction(ISD::CTTZ, MVT::v2i64, Expand);
+    setOperationAction(ISD::CTTZ, MVT::v2i64, Custom);
 
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v8i8, Custom);
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v4i16, Custom);
@@ -562,7 +562,7 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v16i8, Custom);
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v8i16, Custom);
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v4i32, Custom);
-    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v2i64, Expand);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v2i64, Custom);
 
     // NEON only has FMA instructions as of VFP4.
     if (!Subtarget->hasVFP4()) {
@@ -4343,6 +4343,27 @@ static SDValue LowerCTTZ(SDNode *N, SelectionDAG &DAG,
                          DAG.getTargetConstant(Intrinsic::arm_neon_vbsl, dl,
                                                MVT::i32),
                          Cmp, Width, CTTZ_ZeroUnd);
+    }
+    if (ElemTy == MVT::i64) {
+      // cttz(X) = ctpop(LSB - 1)
+      // Load constant 0xffff'ffff'ffff'ffff to register.
+      SDValue FF =  DAG.getNode(ARMISD::VMOVIMM, dl, MVT::v2i64,
+                                DAG.getTargetConstant(0x1eff, dl, MVT::i32));
+      // Compute LSB - 1.
+      SDValue Bits = DAG.getNode(ISD::ADD, dl, VT, LSB, FF);
+      // Count #bits with vcnt.8 and vpaddl.u32.
+      SDValue VecI8 = DAG.getNode(ISD::BITCAST, dl, MVT::v16i8, Bits);
+      SDValue Cnt8 = DAG.getNode(ISD::CTPOP, dl, MVT::v16i8, VecI8);
+      SDValue Cnt16 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, MVT::v8i16,
+          DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+          Cnt8);
+      SDValue Cnt32 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, MVT::v4i32,
+          DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+          Cnt16);
+      SDValue Cnt64 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, MVT::v2i64,
+          DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+          Cnt32);
+      return Cnt64;
     }
     llvm_unreachable("Unexpected vector element type for @llvm.cttz.*()");
   }
