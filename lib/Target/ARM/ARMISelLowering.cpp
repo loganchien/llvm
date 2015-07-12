@@ -547,7 +547,7 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::CTTZ, MVT::v8i8, Custom);
     setOperationAction(ISD::CTTZ, MVT::v4i16, Custom);
     setOperationAction(ISD::CTTZ, MVT::v2i32, Custom);
-    setOperationAction(ISD::CTTZ, MVT::v1i64, Expand);
+    setOperationAction(ISD::CTTZ, MVT::v1i64, Custom);
 
     setOperationAction(ISD::CTTZ, MVT::v16i8, Custom);
     setOperationAction(ISD::CTTZ, MVT::v8i16, Custom);
@@ -557,7 +557,7 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v8i8, Custom);
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v4i16, Custom);
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v2i32, Custom);
-    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v1i64, Expand);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v1i64, Custom);
 
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v16i8, Custom);
     setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v8i16, Custom);
